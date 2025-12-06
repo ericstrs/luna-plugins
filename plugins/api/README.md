@@ -66,6 +66,31 @@ Send JSON messages with these actions:
 - `{ "action": "setShuffleMode", "shuffle": true }`
 - `{ "action": "playNext", "itemId": "..." }`
 - `{ "action": "addToQueue", "itemId": "..." }`
+- `{ "action": "search", "query": "artist - title", "limit": 10 }` (search Tidal catalog)
+
+#### Search Response
+
+The search action returns results asynchronously:
+```json
+{
+  "type": "searchResults",
+  "results": {
+    "tracks": [
+      {
+        "id": 12345678,
+        "title": "Song Title",
+        "duration": 240,
+        "isrc": "USRC12345678",
+        "artist": "Artist Name",
+        "artistId": 123456,
+        "album": "Album Title",
+        "albumId": 654321,
+        "coverUrl": "https://resources.tidal.com/images/.../320x320.jpg"
+      }
+    ]
+  }
+}
+```
 
 ### State Fields/Subscriptions
 
