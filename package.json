@@ -21,7 +21,7 @@
 		"concurrently": "^9.1.2",
 		"electron": "^37.2.5",
 		"http-server": "^14.1.1",
-		"luna": "github:Inrixia/TidaLuna#af2a18b",
+		"luna": "github:Inrixia/TidaLuna#2b1a5a8",
 		"oby": "^15.1.2",
 		"rimraf": "^6.0.1",
 		"tsx": "^4.19.4",
