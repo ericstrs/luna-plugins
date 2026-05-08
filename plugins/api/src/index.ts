@@ -72,7 +72,7 @@ const addToQueue = (itemId: string) => {
     });
 };
 
-const tidalApiFetch = async (path: string): Promise<any> => {
+const tidalApiFetch = async (path: string, init: RequestInit = {}): Promise<any> => {
     const { clientId, token } = await getCredentials();
     const store = redux.store.getState();
     const countryCode = store.session.countryCode;
@@ -80,13 +80,39 @@ const tidalApiFetch = async (path: string): Promise<any> => {
     const sep = path.includes("?") ? "&" : "?";
     const url = `https://desktop.tidal.com/v1${path}${sep}countryCode=${countryCode}&locale=${locale}&deviceType=DESKTOP`;
     const res = await fetch(url, {
+        ...init,
         headers: {
             Authorization: `Bearer ${token}`,
             "x-tidal-token": clientId,
+            ...(init.body ? { "Content-Type": "application/json" } : {}),
+            ...(init.headers ?? {}),
         },
     });
     if (!res.ok) throw new Error(`Tidal API ${path}: ${res.status} ${res.statusText}`);
-    return res.json();
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+};
+
+const findUserId = (value: any, depth = 0): string | number | null => {
+    if (!value || depth > 5) return null;
+    if (typeof value.userId === "string" || typeof value.userId === "number") return value.userId;
+    if (typeof value.id === "string" || typeof value.id === "number") {
+        const name = String(value.username ?? value.email ?? value.firstName ?? "");
+        if (name || value.subscription || value.profileName) return value.id;
+    }
+    if (typeof value !== "object") return null;
+    for (const key of ["user", "session", "auth", "account", "currentUser", "profile"]) {
+        const found = findUserId(value[key], depth + 1);
+        if (found) return found;
+    }
+    return null;
+};
+
+const currentUserId = (): string | number => {
+    const found = findUserId(redux.store.getState());
+    if (!found) throw new Error("Unable to find Tidal user id in redux state");
+    return found;
 };
 
 const tidalCoverUrl = (cover: string | null | undefined): string | null =>
@@ -198,6 +224,48 @@ const rendererActions: Record<string, (data: ActionData) => unknown> = {
             },
             tracks,
         };
+    },
+    getPlaylists: async () => {
+        const userId = currentUserId();
+        const data = await tidalApiFetch(`/users/${userId}/playlists?limit=100&offset=0`);
+        const items = data.items ?? data.playlists ?? [];
+        return {
+            playlists: items.map((raw: any) => {
+                const p = raw.item ?? raw.playlist ?? raw;
+                return {
+                    id: p.uuid ?? p.id ?? raw.uuid ?? raw.id,
+                    title: p.title ?? p.name ?? raw.title ?? raw.name,
+                    description: p.description ?? raw.description ?? null,
+                    numberOfTracks: p.numberOfTracks ?? p.numberOfItems ?? p.trackCount ?? raw.numberOfTracks ?? raw.numberOfItems ?? raw.trackCount ?? 0,
+                };
+            }).filter((p: any) => p.id && p.title),
+        };
+    },
+    getPlaylistTracks: async (data) => {
+        const playlistId = data.playlistId as string | undefined;
+        if (!playlistId) throw new Error("getPlaylistTracks: playlistId required");
+        const tracks: any[] = [];
+        let offset = 0;
+        const limit = 100;
+        for (;;) {
+            const page = await tidalApiFetch(`/playlists/${playlistId}/items?limit=${limit}&offset=${offset}`);
+            const items = page.items ?? [];
+            tracks.push(...items.map((item: any) => mapTrack(item.item ?? item)).filter((track: any) => track.id));
+            if (items.length < limit) break;
+            offset += limit;
+        }
+        return { tracks };
+    },
+    addTracksToPlaylist: async (data) => {
+        const playlistId = data.playlistId as string | undefined;
+        const trackIds = data.trackIds as Array<string | number> | undefined;
+        if (!playlistId) throw new Error("addTracksToPlaylist: playlistId required");
+        if (!Array.isArray(trackIds) || trackIds.length === 0) return { added: 0 };
+        await tidalApiFetch(`/playlists/${playlistId}/items`, {
+            method: "POST",
+            body: JSON.stringify({ itemIds: trackIds.map(String) }),
+        });
+        return { added: trackIds.length };
     },
 };
 
